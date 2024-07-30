@@ -1,7 +1,8 @@
 # DigitalGreen
 # Automatic Transcription and Classification of Agricultural Texts
 
-This application is designed to process files from local server, download additional files from URLs specified in a text file, transcribe audio, summarize text, and classify the summarized content using OpenAI's GPT model.
+This project is a Flask web application integrated with Celery for background task processing and Redis as the message broker. Docker is used to containerize the application and its dependencies. The application processes files from the local server, downloads additional files from URLs specified in a text file, transcribes audio, summarizes text, and classifies the summarized content using OpenAI's GPT model.
+
 
 ## Features
 
@@ -28,6 +29,11 @@ This application is designed to process files from local server, download additi
 3. OpenAI API key
 
 4. FFmpeg (for audio extraction)
+
+5. Docker
+
+6. Docker Compose
+
 
 ## Installation
 
@@ -117,75 +123,88 @@ This application is designed to process files from local server, download additi
 
 ## File Structure
 ````
-flask-celery-file-processing/
-├── temp_uploads/       # Directory for temporary file uploads
-├── pdfs/               # Directory for storing processed files
-├── app.py              # Flask application
-├── tasks.py            # Celery tasks
-├── celery_config.py    # Celery configuration with Flask context
-├── requirements.txt    # Python dependencies
-└── README.md           # Project documentation
+Automatic classification and summarisation of agricultural texts/
+├── temp_uploads/ # Directory for temporary file uploads
+├── pdfs/ # Directory for storing processed files
+├── app.py # Flask application
+├── tasks.py # Celery tasks
+├── celery_config.py # Celery configuration with Flask context
+├── requirements.txt # Python dependencies
+├── Dockerfile # Dockerfile for building the Flask and Celery images
+├── docker-compose.yml # Docker Compose file for orchestrating services
+└── README.md # Project documentation
 ````
 ## Usage
 
+### Building and running the Docker Container
+
+   ````
+      docker-compose up --build
+   ````
+   This command builds the Docker images and starts the containers for the Flask app, Celery worker, and Redis server.
+
+### Access the Application
+
+   Open your browser and navigate to http://localhost:5000 to access the Flask application.
+
 ### Running the Application
-1. Start the Redis server:
-
-   Ensure you have a Redis server running on localhost with the default port 6380.
+   1. Start the Redis server:
    
-2. Start the Celery worker:
-
-
-   ````
-   celery -A tasks worker --pool=solo -l info
-   ````
-3. Start the Flask application:
-
-   ````
-   python app.py
-   ````
+      Ensure you have a Redis server running on localhost with the default port 6380.
+      
+   2. Start the Celery worker:
+   
+   
+      ````
+      celery -A tasks worker --pool=solo -l info
+      ````
+   3. Start the Flask application:
+   
+      ````
+      python app.py
+      ````
 
 ### API Endpoints
-1. Upload Files
-
-   - Endpoint: /upload
+   1. Upload Files
+   
+      - Endpoint: /upload
+        
+      - Method: POST
+   
+      - Body: form-data
+   
+           - Key: files (multiple entries for each file you want to upload)
+            
+           - Value: Choose the files to upload
+      
+      Response :
+      
+         ````
+            {
+            "task_id":"<task_id>"
+            }
+         ````
      
-   - Method: POST
-
-   - Body: form-data
-
-        - Key: files (multiple entries for each file you want to upload)
-         
-        - Value: Choose the files to upload
+   3. Check Task Status
    
-   Response :
-   
+      - Endpoint: /task_status/<task_id>
+      
+      - Method: GET
+        
+      Response :
+      
       ````
-         {
-         "task_id":"<task_id>"
-         }
+                  {
+                    "task_id": "<task_id>",
+                    "task_status": "PENDING|STARTED|SUCCESS|FAILURE",
+                    "task_result": {
+                      "summary": "<cumulative_summary>",
+                      "classes": {
+                        "<filename>": "<classification>"
+                      }
+                    }
+                  }
       ````
-  
-3. Check Task Status
-
-   - Endpoint: /task_status/<task_id>
-   
-   - Method: GET
-     
-   Response :
-   
-   ````
-               {
-                 "task_id": "<task_id>",
-                 "task_status": "PENDING|STARTED|SUCCESS|FAILURE",
-                 "task_result": {
-                   "summary": "<cumulative_summary>",
-                   "classes": {
-                     "<filename>": "<classification>"
-                   }
-                 }
-               }
-   ````
 ## Function Descriptions
 
 - download_youtube_video(url, output_path, audio_only=False): Downloads a YouTube video using yt-dlp.
@@ -196,6 +215,51 @@ flask-celery-file-processing/
 - split_text(text, max_tokens=1500): Splits text into chunks for processing.
 - summarize_text(text): Summarizes text using OpenAI GPT-3.5-turbo.
 - classify_text(summary_text): Classifies summarized text into agricultural categories.
+
+
+## Environment Variables
+
+The following environment variables are used in the docker-compose.yml file:
+
+- FLASK_APP: Specifies the entry point for the Flask application (e.g., app.py).
+- FLASK_RUN_HOST: Configures Flask to run on all network interfaces (0.0.0.0).
+- CELERY_BROKER_URL: URL of the Redis broker used by Celery (e.g., redis://redis:6379).
+- CELERY_RESULT_BACKEND: URL of the Redis backend used by Celery (e.g., redis://redis:6379).
+
+## Dockerfile
+
+The Dockerfile builds an image for both the Flask application and Celery worker with the following steps:
+
+1. Use the official Python 3.10 slim image.
+2. Set the working directory to /app.
+3. Copy the application files into the container.
+4. Install Python dependencies from requirements.txt.
+5. Expose port 5000 for the Flask application.
+6. Set environment variables for Flask.
+7. Define the default command to run Flask.
+
+## docker-compose.yml
+
+The docker-compose.yml file defines three services:
+
+- flask-app: The Flask web application.
+- redis: The Redis server used as a message broker and result backend.
+- celery-worker: The Celery worker for processing background tasks.
+
+All services are connected to a custom network app-network for internal communication.
+
+## Volumes
+
+The docker-compose.yml file mounts the following volumes:
+
+   - The current directory (.) is mounted to /app in both the Flask and Celery containers.
+   - A local directory (./temp_uploads) is mounted to /app/temp_uploads for temporary file storage.
+
+## Troubleshooting
+
+- Ensure Docker and Docker Compose are installed and running.
+- Check the logs for errors by running docker-compose logs or docker-compose logs <service-name>.
+- Verify that the ports 5000 and 6380 are available and not in use by other applications.
 
 ## Example Workflow
 
