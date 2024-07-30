@@ -1,11 +1,11 @@
 # DigitalGreen
 # Automatic Transcription and Classification of Agricultural Texts
 
-This application is designed to process files from an S3 bucket, download additional files from URLs specified in a text file, transcribe audio, summarize text, and classify the summarized content using OpenAI's GPT model.
+This application is designed to process files from local server, download additional files from URLs specified in a text file, transcribe audio, summarize text, and classify the summarized content using OpenAI's GPT model.
 
 ## Features
 
-1.Download files from an S3 bucket.
+1.Download files from the server (local in this project).
 
 2.Download additional files specified in a urls.txt file.
 
@@ -21,22 +21,20 @@ This application is designed to process files from an S3 bucket, download additi
 
 ## Prerequisites
 
-1. Python 3.7+
+1. Python 3.10 or higher
 
-2. Redis server (for Celery backend)
+2. Redis server (for Celery backend) running on local host
 
-3. AWS credentials configured for S3 access
+3. OpenAI API key
 
-4. OpenAI API key
-
-5. FFmpeg (for audio extraction)
+4. FFmpeg (for audio extraction)
 
 ## Installation
 
 1. Clone the repository:
 
    ```bash 
-   git clone https://github.com/your-repo/flask-celery-file-processing.git
+   git clone https://github.com/AaravAsthana/DigitalGreen.git
    cd flask-celery-file-processing
    ```
 2. Create and activate a virtual environment:
@@ -59,9 +57,7 @@ This application is designed to process files from an S3 bucket, download additi
 5. Set up environment variables:
 
      Create a .env file in the project root directory and add the following variables:
-      ```` 
-      AWS_ACCESS_KEY_ID=your_aws_access_key_id
-      AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+      ````
       OPENAI_API_KEY=your_openai_api_key
       CELERY_BROKER_URL=redis://localhost:6379/0
       CELERY_RESULT_BACKEND=redis://localhost:6379/0
@@ -77,12 +73,11 @@ This application is designed to process files from an S3 bucket, download additi
 
 1. Initiating the Process:
 
-   The user sends a POST request to the /process_s3_files endpoint with the S3 bucket name and a list of file keys to process.
-   The Flask application receives this request and starts a Celery task to handle the file processing asynchronously.
+   Users upload multiple files through the /upload endpoint. The files are saved in the temp_uploads directory, and a Celery task is initiated to process these files asynchronously.
 
-2. Downloading Files from S3:
+2. Downloading Files :
 
-   The Celery task (process_files_from_s3) starts by downloading the specified files from the S3 bucket to a local directory (./pdfs).
+   The Celery task (process_files) starts by downloading the specified files from the local server(through Postman) to a local directory (./pdfs).
 
 3. Downloading Additional Files from URLs:
 
@@ -123,74 +118,76 @@ This application is designed to process files from an S3 bucket, download additi
 ## File Structure
 ````
 flask-celery-file-processing/
-│
-├── app.py                  # Main Flask application file
-├── celery_config.py        # Celery configuration file
-├── requirements.txt        # Python dependencies
-├── .env                    # Environment variables
-├── README.md               # This file
-└── pdfs/                   # Directory to store downloaded and processed files
+├── temp_uploads/       # Directory for temporary file uploads
+├── pdfs/               # Directory for storing processed files
+├── app.py              # Flask application
+├── tasks.py            # Celery tasks
+├── celery_config.py    # Celery configuration with Flask context
+├── requirements.txt    # Python dependencies
+└── README.md           # Project documentation
 ````
 ## Usage
 
 ### Running the Application
-1. Start the Flask application:
+1. Start the Redis server:
 
-   ````
-   flask run
-   ````
-
+   Ensure you have a Redis server running on localhost with the default port 6380.
+   
 2. Start the Celery worker:
 
 
    ````
-   celery -A app.celery worker --loglevel=info
+   celery -A tasks worker --pool=solo -l info
    ````
+3. Start the Flask application:
+
+   ````
+   python app.py
+   ````
+
 ### API Endpoints
-1. Process S3 Files
+1. Upload Files
 
-   Endpoint: /process_s3_files
-   Method: POST
-   Description: Initiate the processing of files from an S3 bucket.
-   
-   Request Body:
-   
-   ````json
-   {
-     "bucket_name": "your-s3-bucket-name",
-     "file_keys": ["file1.pdf", "file2.mp4", "urls.txt"]
-   }
-   ````
-   Response:
-   
-   ````json
-   {
-     "task_id": "celery-task-id",
-     "status": "Processing started"
-   }
-   ````
-2. Check Task Status
+   - Endpoint: /upload
+     
+   - Method: POST
 
-   Endpoint: /task_status/<task_id>
-   Method: GET
-   Description: Check the status of a previously initiated task.
+   - Body: form-data
+
+        - Key: files (multiple entries for each file you want to upload)
+         
+        - Value: Choose the files to upload
    
-   Response (example):
+   Response :
    
-   ````json
-   {
-     "state": "SUCCESS",
-     "result": {
-       "classes": {
-         "file1.pdf": ["wheat", "peas"],
-         "file2.mp4": ["paddy"]
-       },
-       "cumulative_summary": "Summarized content of all files..."
-     }
-   }
+      ````
+         {
+         "task_id":"<task_id>"
+         }
+      ````
+  
+3. Check Task Status
+
+   - Endpoint: /task_status/<task_id>
+   
+   - Method: GET
+     
+   Response :
+   
+   ````
+               {
+                 "task_id": "<task_id>",
+                 "task_status": "PENDING|STARTED|SUCCESS|FAILURE",
+                 "task_result": {
+                   "summary": "<cumulative_summary>",
+                   "classes": {
+                     "<filename>": "<classification>"
+                   }
+                 }
+               }
    ````
 ## Function Descriptions
-- download_file_from_s3(bucket_name, file_key, output_path): Downloads a file from the specified S3 bucket.
+
 - download_youtube_video(url, output_path, audio_only=False): Downloads a YouTube video using yt-dlp.
 - download_audio_video_from_link(url, output_path): Downloads a file from a direct URL.
 - extract_audio_from_video(video_path, audio_path): Extracts audio from a video file.
@@ -204,7 +201,7 @@ flask-celery-file-processing/
 
 1. User Request:
 
-   User sends a POST request to /process_s3_files with the following body:
+   User sends a POST request to /upload with the following body:
    ````json
    {
      "bucket_name": "your-s3-bucket-name",
@@ -236,6 +233,5 @@ flask-celery-file-processing/
 
 
 ## Notes
-+ Ensure your AWS credentials have the necessary permissions to access the specified S3 bucket.
 + The urls.txt file should contain one URL per line.
 + This application requires an active internet connection to interact with the OpenAI API.
